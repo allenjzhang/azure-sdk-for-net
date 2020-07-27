@@ -63,8 +63,14 @@ namespace Azure.Iot.Hub.Service
         /// </summary>
         /// <param name="connectionString">
         /// The IoT Hub connection string, with either "iothubowner", "service", "registryRead" or "registryReadWrite" policy, as applicable.
-        /// For more information, see <see href="https://docs.microsoft.com/azure/iot-hub/iot-hub-devguide-security#access-control-and-permissions">Access control and permissions</see>.
+        /// For more information, see <see href="https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-security#access-control-and-permissions"/>.
         /// </param>
+        /// <seealso cref="IotHubServiceClient(Uri, IotHubSasCredential, IotHubServiceClientOptions)">
+        /// This other constructor provides an opportunity to override default behavior, including setting the sas token time to live, specifying the service API version,
+        /// overriding <see href="https://github.com/Azure/azure-sdk-for-net/blob/master/sdk/core/Azure.Core/samples/Pipeline.md">transport</see>,
+        /// enabling <see href="https://github.com/Azure/azure-sdk-for-net/blob/master/sdk/core/Azure.Core/samples/Diagnostics.md">diagnostics</see>,
+        /// and controlling <see href="https://github.com/Azure/azure-sdk-for-net/blob/master/sdk/core/Azure.Core/samples/Configuration.md">retry strategy</see>.
+        /// </seealso>
         public IotHubServiceClient(string connectionString)
             : this(connectionString, new IotHubServiceClientOptions())
         {
@@ -75,23 +81,23 @@ namespace Azure.Iot.Hub.Service
         /// </summary>
         /// <param name="connectionString">
         /// The IoT Hub connection string, with either "iothubowner", "service", "registryRead" or "registryReadWrite" policy, as applicable.
-        /// For more information, see <see href="https://docs.microsoft.com/azure/iot-hub/iot-hub-devguide-security#access-control-and-permissions">Access control and permissions</see>.
+        /// For more information, see <see href="https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-security#access-control-and-permissions"/>.
         /// </param>
         /// <param name="options">
         /// Options that allow configuration of requests sent to the IoT Hub service.
         /// </param>
+        /// <seealso cref="IotHubServiceClient(Uri, IotHubSasCredential, IotHubServiceClientOptions)">
+        /// This other constructor provides an opportunity to override default behavior, including setting the sas token time to live, specifying the service API version,
+        /// overriding <see href="https://github.com/Azure/azure-sdk-for-net/blob/master/sdk/core/Azure.Core/samples/Pipeline.md">transport</see>,
+        /// enabling <see href="https://github.com/Azure/azure-sdk-for-net/blob/master/sdk/core/Azure.Core/samples/Diagnostics.md">diagnostics</see>,
+        /// and controlling <see href="https://github.com/Azure/azure-sdk-for-net/blob/master/sdk/core/Azure.Core/samples/Configuration.md">retry strategy</see>.
+        /// </seealso>
         public IotHubServiceClient(string connectionString, IotHubServiceClientOptions options)
         {
-            Argument.AssertNotNull(options, nameof(options));
-
-            var iotHubConnectionString = new IotHubConnectionString(connectionString);
-            ISasTokenProvider sasProvider = iotHubConnectionString.GetSasTokenProvider();
-
-            _endpoint = BuildEndpointUriFromHostName(iotHubConnectionString.HostName);
-
             _clientDiagnostics = new ClientDiagnostics(options);
 
-            options.AddPolicy(new SasTokenAuthenticationPolicy(sasProvider), HttpPipelinePosition.PerCall);
+            var credential = new IotHubSasCredential(connectionString);
+            options.AddPolicy(new SasTokenAuthenticationPolicy(credential), HttpPipelinePosition.PerCall);
             _httpPipeline = HttpPipelineBuilder.Build(options);
 
             _devicesRestClient = new DevicesRestClient(_clientDiagnostics, _httpPipeline, _endpoint, options.GetVersionString());
@@ -111,21 +117,41 @@ namespace Azure.Iot.Hub.Service
         /// Initializes a new instance of the <see cref="IotHubServiceClient"/> class.
         /// </summary>
         /// <param name="endpoint">
-        /// The IoT Hub service instance URI to connect to.
+        /// The IoT Hub service instance endpoint to connect to.
         /// </param>
         /// <param name="credential">
-        /// The <see cref="TokenCredential"/> implementation which will be used to request for the authentication token.
+        /// The IoT Hub credentials, to be used for authenticating against an IoT Hub instance via SAS tokens.
         /// </param>
-        public IotHubServiceClient(Uri endpoint, TokenCredential credential)
-            : this(endpoint, credential, new IotHubServiceClientOptions())
+        /// <param name="options">
+        /// Options that allow configuration of requests sent to the IoT Hub service.
+        /// </param>
+        public IotHubServiceClient(Uri endpoint, IotHubSasCredential credential, IotHubServiceClientOptions options = default)
         {
+            options ??= new IotHubServiceClientOptions();
+            _clientDiagnostics = new ClientDiagnostics(options);
+
+            options.AddPolicy(new SasTokenAuthenticationPolicy(credential), HttpPipelinePosition.PerCall);
+            _httpPipeline = HttpPipelineBuilder.Build(options);
+
+            _registryManagerRestClient = new RegistryManagerRestClient(_clientDiagnostics, _httpPipeline, endpoint, options.GetVersionString());
+            _twinRestClient = new TwinRestClient(_clientDiagnostics, _httpPipeline, null, options.GetVersionString());
+            _deviceMethodRestClient = new DeviceMethodRestClient(_clientDiagnostics, _httpPipeline, endpoint, options.GetVersionString());
+
+            Devices = new DevicesClient(_registryManagerRestClient, _twinRestClient, _deviceMethodRestClient);
+            Modules = new ModulesClient(_registryManagerRestClient, _twinRestClient, _deviceMethodRestClient);
+
+            Statistics = new StatisticsClient();
+            Messages = new CloudToDeviceMessagesClient();
+            Files = new FilesClient();
+            Jobs = new JobsClient();
         }
 
+        // TODO: Will be enabled once service starts supporting OAuth tokens, for authentication - added here only for reference
         /// <summary>
         /// Initializes a new instance of the <see cref="IotHubServiceClient"/> class.
         /// </summary>
         /// <param name="endpoint">
-        /// The IoT Hub service instance URI to connect to.
+        /// The IoT Hub service instance endpoint to connect to.
         /// </param>
         /// <param name="credential">
         /// The <see cref="TokenCredential"/> implementation which will be used to request for the authentication token.
@@ -133,14 +159,12 @@ namespace Azure.Iot.Hub.Service
         /// <param name="options">
         /// Options that allow configuration of requests sent to the IoT Hub service.
         /// </param>
-        public IotHubServiceClient(Uri endpoint, TokenCredential credential, IotHubServiceClientOptions options)
+        public IotHubServiceClient(Uri endpoint, TokenCredential credential, IotHubServiceClientOptions options = default)
         {
-            Argument.AssertNotNull(options, nameof(options));
-
-            _endpoint = endpoint;
+            options ??= new IotHubServiceClientOptions();
             _clientDiagnostics = new ClientDiagnostics(options);
 
-            options.AddPolicy(new BearerTokenAuthenticationPolicy(credential, GetAuthorizationScopes(_endpoint)), HttpPipelinePosition.PerCall);
+            options.AddPolicy(new BearerTokenAuthenticationPolicy(credential, GetAuthorizationScopes(endpoint)), HttpPipelinePosition.PerCall);
             _httpPipeline = HttpPipelineBuilder.Build(options);
 
             _devicesRestClient = new DevicesRestClient(_clientDiagnostics, _httpPipeline, _endpoint, options.GetVersionString());
@@ -168,11 +192,6 @@ namespace Azure.Iot.Hub.Service
 
             // TODO: GetAuthorizationScopes for IoT Hub
             return null;
-        }
-
-        private static Uri BuildEndpointUriFromHostName(string hostName)
-        {
-            return new UriBuilder { Scheme = "https", Host = hostName }.Uri;
         }
     }
 }
