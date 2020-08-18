@@ -8,7 +8,7 @@ This package follows the [new Azure SDK guidelines](https://azure.github.io/azur
 
 Install the Azure SQL management library for .NET with [NuGet](https://www.nuget.org/):
 
-```PowerShell
+```Package Manager
 Install-Package Azure.ResourceManager.Sql -Version 1.0.0-preview.1 
 ```
 
