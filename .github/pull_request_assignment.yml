@@ -6,3 +6,4 @@
       - "sdk/**/Azure.ResourceManger*/**"
     reviewers:
       - allenjzhang
+      - m-nash
